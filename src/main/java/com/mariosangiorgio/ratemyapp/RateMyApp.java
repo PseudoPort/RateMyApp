@@ -6,21 +6,24 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 
-public class RateMyApp {
+public class RateMyApp implements  NotificationManager{
     private final Context context;
     private final PreferencesManager preferencesManager;
-    private final int daysUntilPrompt;
-    private final int launchesUntilPrompt;
+    private final OptionalValue<Integer> daysUntilPrompt;
+    private final OptionalValue<Integer> launchesUntilPrompt;
+    private final NotificationManager notificationManager;
 
-    public RateMyApp(Context context, int daysUntilPrompt, int launchesUntilPrompt){
+    RateMyApp(Context context, OptionalValue<Integer> daysUntilPrompt, OptionalValue<Integer> launchesUntilPrompt, NotificationManager notificationManager){
         if(context == null){
             throw new IllegalArgumentException("context should not be null");
         }
-        if(daysUntilPrompt < 0 || launchesUntilPrompt < 0)
+        if(( daysUntilPrompt.hasValue() && daysUntilPrompt.value() < 0 )  || (launchesUntilPrompt.hasValue() && launchesUntilPrompt.value() < 0))
         {
             throw new IllegalArgumentException("Expected non-negative values");
         }
         this.context = context;
+        this.notificationManager = notificationManager;
+        // If notificationManager is null the class is going to call itself
         this.daysUntilPrompt = daysUntilPrompt;
         this.launchesUntilPrompt = launchesUntilPrompt;
         this.preferencesManager = PreferencesManager.buildFromContext(context);
@@ -29,7 +32,12 @@ public class RateMyApp {
     public void appLaunched(){
         if(preferencesManager.alertEnabled()){
             if(canShowDialog()){
-                showDialog();
+                if(notificationManager == null){
+                    showDialog();
+                }
+                else{
+                    notificationManager.showDialog();
+                }
             }
             else{
                 preferencesManager.incrementLaunchCounter();
@@ -37,16 +45,37 @@ public class RateMyApp {
         }
     }
 
-    private boolean canShowDialog() {
-        return preferencesManager.launchCounter() >= launchesUntilPrompt &&
-                preferencesManager.daysFromFirstLaunch() >= daysUntilPrompt;
+    private boolean launchCounterConditionsMet(){
+        if(launchesUntilPrompt.hasValue()){
+            return preferencesManager.launchCounter() >= launchesUntilPrompt.value();
+        }
+        else{
+            return true;
+        }
     }
 
-    private void showDialog() {
+    private boolean daysElapsedConditionsMet(){
+        if(daysUntilPrompt.hasValue()){
+            return preferencesManager.daysFromFirstLaunch() >= daysUntilPrompt.value();
+        }
+        else{
+            return true;
+        }
+    }
+
+    private boolean canShowDialog() {
+        return launchCounterConditionsMet() && daysElapsedConditionsMet();
+    }
+
+    private String getApplicationName(Context context){
+        return context.getApplicationContext().getApplicationInfo().loadLabel(context.getPackageManager()).toString();
+    }
+
+    public void showDialog() {
         DialogListener listener = new DialogListener();
 
         AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(context);
-        dialogBuilder.setTitle(context.getString(R.string.rate)+" "+context.getApplicationInfo().name);
+        dialogBuilder.setTitle(context.getString(R.string.rate)+" "+getApplicationName(context));
         dialogBuilder.setMessage(R.string.rate_message);
         dialogBuilder.setPositiveButton(R.string.rate_button, listener);
         dialogBuilder.setNeutralButton(R.string.later_button, listener);
